@@ -8,11 +8,11 @@ use std::collections::HashMap;
 type Result<T> = std::result::Result<T, CloudeError>;
 
 pub trait RcloneApi {
-    fn list_profiles(&self) -> impl Future<Output = Result<Vec<String>>>;
-    fn config_create(
+    fn list_profiles(&self) -> impl Future<Output = Result<Vec<(String, String)>>>;
+    fn create_config(
         &self,
         profile_name: &str,
-        domen: &str,
+        domain: &str,
     ) -> impl Future<Output = Result<String>>;
     fn delete_profile(&self, profile_name: &str) -> impl Future<Output = Result<String>>;
     fn mount(
@@ -30,26 +30,29 @@ pub struct RcClone {
 }
 
 impl RcloneApi for RcClone {
-    async fn list_profiles(&self) -> Result<Vec<String>> {
+    async fn list_profiles(&self) -> Result<Vec<(String, String)>> {
         let response = self
             .client
-            .post(format!("{}config/listremotes", self.url))
+            .post(format!("{}config/dump", self.url))
             .send()
             .await
-            .map_err(CloudeError::ReqwestError)?;
+            .map_err(CloudError::ReqwestError)?;
 
-        let data: ListRemotesResponse = response
+        let data: HashMap<String, RemoteConfig> = response
             .json()
             .await
-            .map_err(|err| CloudeError::RcloneError((StatusCode::IM_A_TEAPOT, err.to_string())))?;
+            .map_err(|err| CloudError::RcloneError((StatusCode::IM_A_TEAPOT, err.to_string())))?;
 
-        Ok(data.remotes)
+        Ok(data
+            .into_iter()
+            .map(|(name, _type)| (name, _type.r#type))
+            .collect())
     }
 
-    async fn config_create(&self, profile_name: &str, domen: &str) -> Result<String> {
+    async fn create_config(&self, profile_name: &str, domain: &str) -> Result<String> {
         let body = ConfigCreateRequest {
             name: profile_name.to_string(),
-            r_type: domen.to_string(),
+            r_type: domain.to_string(),
             parameters: HashMap::new(),
         };
 
@@ -59,19 +62,19 @@ impl RcloneApi for RcClone {
             .json(&body)
             .send()
             .await
-            .map_err(CloudeError::ReqwestError)?;
+            .map_err(CloudError::ReqwestError)?;
 
         if response.status().is_success() {
             Ok(format!("Success: Profile {} created", profile_name))
         } else {
-            Err(CloudeError::RcloneError((
+            Err(CloudError::RcloneError((
                 StatusCode::CONFLICT,
                 "Failed to create profile".into(),
             )))
         }
     }
 
-    async fn delete_profile(&self, profile_name: &str) -> Result<String> {
+    async fn delete_config(&self, profile_name: &str) -> Result<String> {
         let body = HashMap::from([("name", profile_name)]);
 
         self.client
@@ -79,7 +82,7 @@ impl RcloneApi for RcClone {
             .json(&body)
             .send()
             .await
-            .map_err(CloudeError::ReqwestError)?;
+            .map_err(CloudError::ReqwestError)?;
 
         Ok(format!("Success: Profile {} deleted", profile_name))
     }
@@ -101,7 +104,7 @@ impl RcloneApi for RcClone {
             .json(&body)
             .send()
             .await
-            .map_err(CloudeError::ReqwestError)?;
+            .map_err(CloudError::ReqwestError)?;
 
         Ok(format!("Mounting {} started", profile_name))
     }
@@ -118,20 +121,20 @@ impl RcloneApi for RcClone {
             .json(&body)
             .send()
             .await
-            .map_err(CloudeError::ReqwestError)?;
+            .map_err(CloudError::ReqwestError)?;
 
         // Читаем весь JSON для отладки
         let res_json: serde_json::Value = response
             .json()
             .await
-            .map_err(|err| CloudeError::RcloneError((StatusCode::IM_A_TEAPOT, err.to_string())))?;
+            .map_err(|err| CloudError::RcloneError((StatusCode::IM_A_TEAPOT, err.to_string())))?;
 
         // Печатаем в консоль Rust-приложения, что прислал rclone
         println!("Rclone link response: {:?}", res_json);
 
         match res_json["url"].as_str() {
             Some(url) => Ok(url.to_string()),
-            None => Err(CloudeError::RcloneError((
+            None => Err(CloudError::RcloneError((
                 StatusCode::NOT_FOUND,
                 "No link generated".to_string(),
             ))),

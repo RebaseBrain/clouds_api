@@ -11,9 +11,9 @@ pub mod error;
 pub mod json_result;
 pub mod rclone_api;
 
-pub trait CloudeApi {
+pub trait CloudApi {
     fn list_profiles(&self) -> impl Future<Output = String>;
-    fn config_create(&self, profile_name: &str, domen: &str) -> impl Future<Output = String>;
+    fn create_profile(&self, profile_name: &str, domain: &str) -> impl Future<Output = String>;
     fn delete_profile(&self, profile_name: &str) -> impl Future<Output = String>;
     fn mount(
         &self,
@@ -24,22 +24,31 @@ pub trait CloudeApi {
     fn link(&self, profile_name: &str, path: &str) -> impl Future<Output = String>;
 }
 
-pub struct Cloude {
+pub struct Cloud {
     pub rclone: RcClone,
 }
 
 #[interface(name = "org.zbus.cloud_api")]
-impl CloudeApi for Cloude {
+impl CloudApi for Cloud {
     async fn list_profiles(&self) -> String {
-        todo!()
+        match self.rclone.list_profiles().await {
+            Ok(profiles) => to_ok(StatusCode::OK, profiles),
+            Err(e) => e.into(),
+        }
     }
 
-    async fn config_create(&self, profile_name: &str, domen: &str) -> String {
-        todo!()
+    async fn create_profile(&self, profile_name: &str, domain: &str) -> String {
+        match self.rclone.create_config(profile_name, domain).await {
+            Ok(res) => to_ok(StatusCode::OK, res),
+            Err(err) => err.to_string(),
+        }
     }
 
     async fn delete_profile(&self, profile_name: &str) -> String {
-        todo!()
+        match self.rclone.delete_config(profile_name).await {
+            Ok(res) => to_ok(StatusCode::OK, res),
+            Err(err) => err.to_string(),
+        }
     }
 
     async fn mount(&self, profile_name: &str, domen: &str, file_path: &str) -> String {
@@ -50,6 +59,9 @@ impl CloudeApi for Cloude {
     }
 
     async fn link(&self, profile_name: &str, path: &str) -> String {
-        todo!()
+        match self.rclone.link(profile_name, path).await {
+            Ok(url) => to_ok(StatusCode::OK, url),
+            Err(e) => e.into(),
+        }
     }
 }
