@@ -1,10 +1,10 @@
-use reqwest::{Client, StatusCode};
-use std::collections::HashMap;
-
 use crate::{
     entities::{ConfigCreateRequest, ListRemotesResponse},
     error::CloudeError,
 };
+use reqwest::{Client, StatusCode};
+use serde_json::json;
+use std::collections::HashMap;
 type Result<T> = std::result::Result<T, CloudeError>;
 
 pub trait RcloneApi {
@@ -85,10 +85,16 @@ impl RcloneApi for RcClone {
     }
 
     async fn mount(&self, profile_name: &str, _domen: &str, file_path: &str) -> Result<String> {
-        let body = HashMap::from([
-            ("fs", profile_name.to_string() + ":/"),
-            ("mountPoint", format!("{}{}", file_path, profile_name)),
-        ]);
+        let body = json!({
+            "fs": format!("{}:/", profile_name),
+            "mountPoint": format!("{}", file_path),
+            "vfsOpt": {
+                "CacheMode": "full",
+                "CacheMaxAge": "3600s",
+                "CacheMaxSize": "10G",
+                "CachePollInterval": "1m"
+            }
+        });
 
         self.client
             .post(format!("{}mount/mount", self.url))
