@@ -16,6 +16,7 @@ struct ConfigCreateRequest {
     name: String,
     #[serde(rename = "type")]
     r_type: String,
+    parameters: HashMap<String, String>,
 }
 
 pub trait RcloneApi {
@@ -51,6 +52,7 @@ impl RcloneApi for RcClone {
         let body = ConfigCreateRequest {
             name: profile_name.to_string(),
             r_type: domen.to_string(),
+            parameters: HashMap::new(),
         };
 
         let response = self
@@ -82,10 +84,9 @@ impl RcloneApi for RcClone {
     }
 
     async fn mount(&self, profile_name: &str, _domen: &str) -> zbus::fdo::Result<String> {
-        // В rclone RC за монтирование отвечает mount/mount
         let body = HashMap::from([
             ("fs", profile_name.to_string() + ":"),
-            ("mountPoint", format!("/tmp/{}", profile_name)), // Пример пути
+            ("mountPoint", format!("/tmp/{}", profile_name)),
         ]);
 
         self.client
@@ -99,7 +100,6 @@ impl RcloneApi for RcClone {
     }
 
     async fn link(&self, profile_name: &str, path: &str) -> zbus::fdo::Result<String> {
-        // Создание публичной ссылки
         let body = HashMap::from([
             ("fs", profile_name.to_string() + ":"),
             ("remote", path.to_string()),
@@ -113,8 +113,13 @@ impl RcloneApi for RcClone {
             .await
             .map_err(CloudsErrors::ReqwestError)?;
 
+        // Читаем весь JSON для отладки
         let res_json: serde_json::Value =
             response.json().await.map_err(CloudsErrors::ReqwestError)?;
+
+        // Печатаем в консоль Rust-приложения, что прислал rclone
+        println!("Rclone link response: {:?}", res_json);
+
         Ok(res_json["url"]
             .as_str()
             .unwrap_or("No link generated")
