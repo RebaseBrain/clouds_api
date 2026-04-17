@@ -11,7 +11,7 @@ done
 cargo build --release
 
 SERVICE_DIR="$HOME/.config/systemd/user"
-BINARY_PATH="$(pwd)/target/release/clouds_api"
+BINARY_PATH="$(pwd)/target/release/pompiliusd"
 RCLONE_BIN="$(which rclone)"
 mkdir -p "$SERVICE_DIR"
 
