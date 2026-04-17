@@ -34,10 +34,14 @@ impl RcloneApi for RcClone {
             .await
             .map_err(CloudError::ReqwestError)?;
 
-        let data: HashMap<String, RemoteConfig> = response
-            .json()
-            .await
-            .map_err(|err| CloudError::RcloneError((StatusCode::IM_A_TEAPOT, err.to_string())))?;
+        let data: HashMap<String, RemoteConfig> =
+            response
+                .json()
+                .await
+                .map_err(|err| CloudError::RcloneError {
+                    status: StatusCode::IM_A_TEAPOT,
+                    message: err.to_string(),
+                })?;
 
         Ok(data
             .into_iter()
@@ -63,10 +67,10 @@ impl RcloneApi for RcClone {
         if response.status().is_success() {
             Ok(format!("Success: Profile {} created", profile_name))
         } else {
-            Err(CloudError::RcloneError((
-                StatusCode::CONFLICT,
-                "Failed to create profile".into(),
-            )))
+            Err(CloudError::RcloneError {
+                status: StatusCode::CONFLICT,
+                message: "Failed to create profile".into(),
+            })
         }
     }
 
@@ -114,20 +118,24 @@ impl RcloneApi for RcClone {
             .map_err(CloudError::ReqwestError)?;
 
         // Читаем весь JSON для отладки
-        let res_json: serde_json::Value = response
-            .json()
-            .await
-            .map_err(|err| CloudError::RcloneError((StatusCode::IM_A_TEAPOT, err.to_string())))?;
+        let res_json: serde_json::Value =
+            response
+                .json()
+                .await
+                .map_err(|err| CloudError::RcloneError {
+                    status: StatusCode::IM_A_TEAPOT,
+                    message: err.to_string(),
+                })?;
 
         // Печатаем в консоль Rust-приложения, что прислал rclone
         println!("Rclone link response: {:?}", res_json);
 
         match res_json["url"].as_str() {
             Some(url) => Ok(url.to_string()),
-            None => Err(CloudError::RcloneError((
-                StatusCode::NOT_FOUND,
-                "No link generated".to_string(),
-            ))),
+            None => Err(CloudError::RcloneError {
+                status: StatusCode::NOT_FOUND,
+                message: "No link generated".to_string(),
+            }),
         }
     }
 }
