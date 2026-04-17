@@ -9,7 +9,7 @@ pub fn to_ok<T: Serialize>(status_code: StatusCode, data: T) -> String {
     .to_string()
 }
 
-pub fn to_err(status_code: StatusCode, error: String) -> String {
+pub fn to_err(status_code: StatusCode, error: &str) -> String {
     serde_json::json!({
         "status_code": status_code.to_string(),
         "message": error
