@@ -45,7 +45,7 @@ impl CloudApi for Cloud {
     }
 
     async fn delete_profile(&self, profile_name: &str) -> String {
-        match self.rclone.delete_config(profile_name).await {
+        match self.rclone.delete_profile(profile_name).await {
             Ok(res) => to_ok(StatusCode::OK, res),
             Err(err) => err.to_string(),
         }

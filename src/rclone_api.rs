@@ -1,11 +1,11 @@
 use crate::{
-    entities::{ConfigCreateRequest, ListRemotesResponse},
-    error::CloudeError,
+    entities::{ConfigCreateRequest, RemoteConfig},
+    error::CloudError,
 };
 use reqwest::{Client, StatusCode};
 use serde_json::json;
 use std::collections::HashMap;
-type Result<T> = std::result::Result<T, CloudeError>;
+type Result<T> = std::result::Result<T, CloudError>;
 
 pub trait RcloneApi {
     fn list_profiles(&self) -> impl Future<Output = Result<Vec<(String, String)>>>;
@@ -74,7 +74,7 @@ impl RcloneApi for RcClone {
         }
     }
 
-    async fn delete_config(&self, profile_name: &str) -> Result<String> {
+    async fn delete_profile(&self, profile_name: &str) -> Result<String> {
         let body = HashMap::from([("name", profile_name)]);
 
         self.client
