@@ -11,22 +11,25 @@ pub mod error;
 pub mod json_result;
 pub mod rclone_api;
 
-pub trait CloudeApi {
+pub trait CloudApi {
     fn list_profiles(&self) -> impl Future<Output = String>;
     fn create_profile(&self, profile_name: &str, domen: &str) -> impl Future<Output = String>;
     fn delete_profile(&self, profile_name: &str) -> impl Future<Output = String>;
-    fn mount(&self, profile_name: &str, domen: &str) -> impl Future<Output = String>;
+    fn mount(&self, profile_name: &str, domain: &str) -> impl Future<Output = String>;
     fn link(&self, profile_name: &str, path: &str) -> impl Future<Output = String>;
 }
 
-pub struct Cloude {
+pub struct Cloud {
     pub rclone: RcClone,
 }
 
 #[interface(name = "org.zbus.cloud_api")]
-impl CloudeApi for Cloude {
+impl CloudApi for Cloud {
     async fn list_profiles(&self) -> String {
-        todo!()
+        match self.rclone.list_profiles().await {
+            Ok(profiles) => to_ok(StatusCode::OK, profiles),
+            Err(e) => e.into(),
+        }
     }
 
     async fn create_profile(&self, profile_name: &str, domen: &str) -> String {
@@ -43,11 +46,14 @@ impl CloudeApi for Cloude {
         }
     }
 
-    async fn mount(&self, profile_name: &str, domen: &str) -> String {
+    async fn mount(&self, profile_name: &str, domain: &str) -> String {
         todo!()
     }
 
     async fn link(&self, profile_name: &str, path: &str) -> String {
-        todo!()
+        match self.rclone.link(profile_name, path).await {
+            Ok(url) => to_ok(StatusCode::OK, url),
+            Err(e) => e.into(),
+        }
     }
 }

@@ -4,7 +4,7 @@ use thiserror::Error;
 use crate::json_result::to_err;
 
 #[derive(Error, Debug)]
-pub enum CloudeError {
+pub enum CloudError {
     #[error("Reqwest error: {0}")]
     ReqwestError(#[from] reqwest::Error),
 
@@ -12,13 +12,13 @@ pub enum CloudeError {
     RcloneError((StatusCode, String)),
 }
 
-impl From<CloudeError> for String {
-    fn from(value: CloudeError) -> Self {
+impl From<CloudError> for String {
+    fn from(value: CloudError) -> Self {
         match value {
-            CloudeError::ReqwestError(err) => {
+            CloudError::ReqwestError(err) => {
                 to_err(StatusCode::INTERNAL_SERVER_ERROR, &err.to_string())
             }
-            CloudeError::RcloneError((status, err)) => to_err(status, &err),
+            CloudError::RcloneError((status, err)) => to_err(status, &err),
         }
     }
 }
