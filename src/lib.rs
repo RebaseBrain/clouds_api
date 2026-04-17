@@ -1,38 +1,43 @@
-use reqwest::Client;
 use zbus::interface;
-mod zbus_error;
 
-trait RcloneApi {
-    async fn list_remotes(&self) -> zbus::fdo::Result<Vec<String>>;
+use crate::rclone_api::RcClone;
+
+pub mod error;
+pub mod json_result;
+pub mod entities;
+pub mod rclone_api;
+
+pub trait CloudeApi {
+    fn list_profiles(&self) -> impl Future<Output = String>;
+    fn config_create(&self, profile_name: &str, domen: &str) -> impl Future<Output = String>;
+    fn delete_profile(&self, profile_name: &str) -> impl Future<Output = String>;
+    fn mount(&self, profile_name: &str, domen: &str) -> impl Future<Output = String>;
+    fn link(&self, profile_name: &str, path: &str) -> impl Future<Output = String>;
 }
 
-pub struct RcClone {
-    pub client: Client,
-    pub url: String,
-}
-use serde::Deserialize;
-
-use crate::zbus_error::CloudsErrors;
-
-#[derive(Deserialize)]
-struct ListRemotesResponse {
-    remotes: Vec<String>,
+pub struct Cloude {
+    pub rclone: RcClone,
 }
 
 #[interface(name = "org.zbus.cloud_api")]
-impl RcloneApi for RcClone {
-    async fn list_remotes(&self) -> zbus::fdo::Result<Vec<String>> {
-        let response = self
-            .client
-            .post(format!("{}config/listremotes", self.url))
-            .send()
-            .await
-            .map_err(CloudsErrors::ReqwestError)?;
+impl CloudeApi for Cloude {
+    async fn list_profiles(&self) -> String {
+        todo!()
+    }
 
-        Ok(response
-            .json::<ListRemotesResponse>()
-            .await
-            .map_err(CloudsErrors::ReqwestError)?
-            .remotes)
+    async fn config_create(&self, profile_name: &str, domen: &str) -> String {
+        todo!()
+    }
+
+    async fn delete_profile(&self, profile_name: &str) -> String {
+        todo!()
+    }
+
+    async fn mount(&self, profile_name: &str, domen: &str) -> String {
+        todo!()
+    }
+
+    async fn link(&self, profile_name: &str, path: &str) -> String {
+        todo!()
     }
 }
