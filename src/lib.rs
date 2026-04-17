@@ -1,9 +1,19 @@
-use reqwest::Client;
 use zbus::interface;
 mod zbus_error;
 
 trait RcloneApi {
-    async fn list_remotes(&self) -> zbus::fdo::Result<Vec<String>>;
+    /// Получене списка всех профилей
+    async fn list_profiles(&self) -> zbus::fdo::Result<Vec<String>>;
+    /// Создать профиль
+    /// - domen отвечает за облако. Например yandex связывает профиль с яндексом
+    /// - После исполнения происходит редирект в браузер для авторизации
+    /// String - success/error
+    async fn config_create(&self, profile_name: &str, domen: &str) -> zbus::fdo::Result<String>;
+    async fn delete_create(&self, profile_name: &str) -> zbus::fdo::Result<String>;
+    async fn mount(&self, profile_name: &str, domen: &str) -> zbus::fdo::Result<String>;
+    async fn link(&self, profile_name: &str, path: &str) -> zbus::fdo::Result<String>;
+    async fn link(&self, profile_name: &str, path: &str) -> zbus::fdo::Result<String>;
+
 }
 
 pub struct RcClone {
@@ -21,7 +31,8 @@ struct ListRemotesResponse {
 
 #[interface(name = "org.zbus.cloud_api")]
 impl RcloneApi for RcClone {
-    async fn list_remotes(&self) -> zbus::fdo::Result<Vec<String>> {
+    async fn list_profiles(&self) -> String {
+        // TODO: немного фиксануть надо
         let response = self
             .client
             .post(format!("{}config/listremotes", self.url))
@@ -36,3 +47,4 @@ impl RcloneApi for RcClone {
             .remotes)
     }
 }
+
