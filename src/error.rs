@@ -8,8 +8,8 @@ pub enum CloudError {
     #[error("Reqwest error: {0}")]
     ReqwestError(#[from] reqwest::Error),
 
-    #[error("Rclone error")]
-    RcloneError((StatusCode, String)),
+    #[error("Rclone error: {message}")]
+    RcloneError { status: StatusCode, message: String },
 }
 
 impl From<CloudError> for String {
@@ -18,7 +18,7 @@ impl From<CloudError> for String {
             CloudError::ReqwestError(err) => {
                 to_err(StatusCode::INTERNAL_SERVER_ERROR, &err.to_string())
             }
-            CloudError::RcloneError((status, err)) => to_err(status, &err),
+            CloudError::RcloneError { status, message } => to_err(status, &message),
         }
     }
 }
