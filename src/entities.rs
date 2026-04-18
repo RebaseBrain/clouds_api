@@ -62,3 +62,17 @@ pub struct RcloneProvider {
 pub struct ProvidersResponse {
     pub providers: Vec<RcloneProvider>,
 }
+
+#[derive(Deserialize, Debug)]
+pub struct Transferring {
+    pub name: String,
+    pub percentage: u32,
+    pub size: i64,
+    pub bytes: i64,
+    pub speed: f64,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct CoreStatsResponse {
+    pub transferring: Vec<Transferring>,
+}

@@ -19,6 +19,11 @@ pub trait RcloneApi {
         &self,
         provider_type: &str,
     ) -> impl Future<Output = Result<Vec<serde_json::Value>>>;
+    fn get_files_status(
+        &self,
+        profile_name: &str,
+        paths: Vec<String>,
+    ) -> impl Future<Output = Result<HashMap<String, String>>>;
     fn create_config(
         &self,
         profile_name: &str,
@@ -166,6 +171,33 @@ impl RcloneApi for Rclone {
             .collect();
 
         Ok(filtered_options)
+    }
+
+    async fn get_files_status(
+        &self,
+        profile_name: &str,
+        paths: Vec<String>,
+    ) -> Result<HashMap<String, String>> {
+        let mut statuses = HashMap::new();
+        let home = std::env::var("HOME").unwrap_or_else(|_| "".to_string());
+
+        for path in paths {
+            let relative_path = path.trim_start_matches('/');
+            let cache_path = std::path::Path::new(&home)
+                .join(".cache/rclone/vfs")
+                .join(profile_name)
+                .join(relative_path);
+
+            let status = if cache_path.exists() && cache_path.is_file() {
+                "CACHED"
+            } else {
+                "NOT_CACHED"
+            };
+
+            statuses.insert(path, status.to_string());
+        }
+
+        Ok(statuses)
     }
 
     async fn create_config(
