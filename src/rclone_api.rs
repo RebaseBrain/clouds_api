@@ -23,7 +23,7 @@ pub trait RcloneApi {
         &self,
         profile_name: &str,
         domain: &str,
-        parameters: HashMap<String, String>,
+        parameters: &str,
     ) -> impl Future<Output = Result<String>>;
     fn delete_profile(&self, profile_name: &str) -> impl Future<Output = Result<String>>;
     fn mount(&self, profile_name: &str, file_path: &str) -> impl Future<Output = Result<String>>;
@@ -172,9 +172,10 @@ impl RcloneApi for Rclone {
         &self,
         profile_name: &str,
         domain: &str,
-        parameters: HashMap<String, String>,
+        parameters: &str,
     ) -> Result<String> {
         Self::cleanup_auth_port();
+        let params = serde_json::from_str::<CreateParameters>(parameters)?.into_string_map();
 
         let current_profiles = self.list_profiles().await.unwrap_or_default();
         if current_profiles
@@ -194,7 +195,7 @@ impl RcloneApi for Rclone {
         ];
 
         // Add custom parameters
-        for (key, value) in parameters {
+        for (key, value) in params {
             args.push(key);
             args.push(value);
         }
