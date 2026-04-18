@@ -29,12 +29,12 @@ pub trait RcloneApi {
     ) -> impl Future<Output = Result<String>>;
 }
 
-pub struct RcClone {
+pub struct Rclone {
     pub client: Client,
     pub url: String,
 }
 
-impl RcloneApi for RcClone {
+impl RcloneApi for Rclone {
     async fn list_profiles(&self) -> Result<Vec<(String, String)>> {
         let response = self
             .client

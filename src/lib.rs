@@ -5,7 +5,7 @@ use zbus::interface;
 
 use crate::{
     json_result::to_ok,
-    rclone_api::{RcClone, RcloneApi},
+    rclone_api::{Rclone, RcloneApi},
 };
 
 pub mod entities;
@@ -23,7 +23,7 @@ pub trait CloudApi {
 }
 
 pub struct Cloud {
-    pub rclone: RcClone,
+    pub rclone: Rclone,
 }
 
 #[interface(name = "org.zbus.pompiliusd")]
