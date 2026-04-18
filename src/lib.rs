@@ -16,6 +16,11 @@ pub mod cache;
 pub trait CloudApi {
     fn list_profiles(&self) -> impl Future<Output = String>;
     fn get_provider_options(&self, provider_type: &str) -> impl Future<Output = String>;
+    fn get_files_status(
+        &self,
+        profile_name: &str,
+        paths: Vec<String>,
+    ) -> impl Future<Output = String>;
     fn create_profile(
         &self,
         profile_name: &str,
@@ -57,6 +62,13 @@ impl CloudApi for Cloud {
 
     async fn get_provider_options(&self, provider_type: &str) -> String {
         match self.rclone.get_provider_options(provider_type).await {
+            Ok(res) => to_ok(StatusCode::OK, res),
+            Err(err) => err.into(),
+        }
+    }
+
+    async fn get_files_status(&self, profile_name: &str, paths: Vec<String>) -> String {
+        match self.rclone.get_files_status(profile_name, paths).await {
             Ok(res) => to_ok(StatusCode::OK, res),
             Err(err) => err.into(),
         }

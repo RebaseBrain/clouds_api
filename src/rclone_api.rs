@@ -20,6 +20,11 @@ pub trait RcloneApi {
         &self,
         provider_type: &str,
     ) -> impl Future<Output = Result<Vec<serde_json::Value>>>;
+    fn get_files_status(
+        &self,
+        profile_name: &str,
+        paths: Vec<String>,
+    ) -> impl Future<Output = Result<HashMap<String, String>>>;
     fn create_config(
         &self,
         profile_name: &str,
@@ -171,6 +176,51 @@ impl RcloneApi for Rclone {
         Ok(filtered_options)
     }
 
+    async fn get_files_status(
+        &self,
+        profile_name: &str,
+        paths: Vec<String>,
+    ) -> Result<HashMap<String, String>> {
+        let mut results = HashMap::new();
+        let home = std::env::var("HOME").unwrap_or_default();
+
+        let meta_base_path = std::path::Path::new(&home)
+            .join(".cache/rclone/vfs")
+            .join(profile_name);
+
+        let core_stats_res = self
+            .client
+            .post(format!("{}core/stats", self.url))
+            .send()
+            .await;
+
+        let active_transfers: Vec<String> = if let Ok(resp) = core_stats_res {
+            let body: CoreStatsResponse = resp.json().await.unwrap_or_default();
+            body.transferring.into_iter().map(|t| t.name).collect()
+        } else {
+            vec![]
+        };
+
+        for path in paths {
+            let relative_path = path.trim_start_matches('/');
+
+            if active_transfers.iter().any(|t| t.contains(relative_path)) {
+                results.insert(path.clone(), "SYNCING".to_string());
+                continue;
+            }
+
+            let meta_file = meta_base_path.join(relative_path);
+
+            if meta_file.exists() {
+                results.insert(path.clone(), "CACHED".to_string());
+            } else {
+                results.insert(path.clone(), "NOT_CACHED".to_string());
+            }
+        }
+
+        Ok(results)
+    }
+
     async fn create_config(
         &self,
         profile_name: &str,
@@ -230,11 +280,6 @@ impl RcloneApi for Rclone {
             status = child.wait() => {
                 match status {
                     Ok(s) if s.success() => {
-                        let _ = self.client
-                            .post(format!("{}config/reload", self.url))
-                            .send()
-                            .await;
-
                         Ok(format!("Profile '{}' created successfully", profile_name))
                     }
                     Ok(s) => {
