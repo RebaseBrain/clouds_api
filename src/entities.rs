@@ -24,3 +24,26 @@ pub struct RemoteConfig {
 pub struct Config {
     pub profiles: BTreeMap<String, String>,
 }
+
+#[derive(Deserialize, Debug, Serialize)]
+pub struct RcloneOption {
+    #[serde(rename = "Name")]
+    pub name: String,
+    #[serde(rename = "Help")]
+    pub help: String,
+    #[serde(rename = "Required")]
+    pub required: bool,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct RcloneProvider {
+    #[serde(rename = "Name")]
+    pub name: String,
+    #[serde(rename = "Options")]
+    pub options: Vec<RcloneOption>,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct ProvidersResponse {
+    pub providers: Vec<RcloneProvider>,
+}

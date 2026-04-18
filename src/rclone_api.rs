@@ -1,4 +1,4 @@
-use crate::{entities::RemoteConfig, error::CloudError, setup_conf_dir};
+use crate::{entities::*, error::CloudError, setup_conf_dir};
 use reqwest::{Client, StatusCode};
 use serde_json::json;
 use std::fs;
@@ -15,6 +15,10 @@ pub trait RcloneApi {
         remote_path: &str,
     ) -> impl Future<Output = Result<String>>;
     fn list_profiles(&self) -> impl Future<Output = Result<Vec<(String, String)>>>;
+    fn get_provider_options(
+        &self,
+        provider_type: &str,
+    ) -> impl Future<Output = Result<Vec<serde_json::Value>>>;
     fn create_config(
         &self,
         profile_name: &str,
@@ -71,8 +75,6 @@ impl Rclone {
 
 impl RcloneApi for Rclone {
     async fn delete_cache_path(&self, profile_name: &str, remote_path: &str) -> Result<String> {
-        // 1. Формируем путь к кешу (обычно это ~/.cache/rclone/vfs/)
-        // В идеале путь к кеш-директории должен быть в конфиге вашего приложения
         let cache_base = format!(
             "{}/.cache/rclone/vfs/{}/",
             std::env::var("HOME").unwrap(),
@@ -94,11 +96,11 @@ impl RcloneApi for Rclone {
             }
 
             Ok(format!(
-                "Локальный кеш для {} удален. Файл скачается заново при обращении.",
+                "Local cache for {} deleted. File will be downloaded again on request.",
                 remote_path
             ))
         } else {
-            Ok("Файл и так не был закеширован".to_string())
+            Ok("File is not cached".to_string())
         }
     }
     async fn list_profiles(&self) -> Result<Vec<(String, String)>> {
@@ -122,6 +124,48 @@ impl RcloneApi for Rclone {
             .into_iter()
             .map(|(name, _type)| (name, _type.r#type))
             .collect())
+    }
+
+    async fn get_provider_options(&self, provider_type: &str) -> Result<Vec<serde_json::Value>> {
+        let response = self
+            .client
+            .post(format!("{}config/providers", self.url))
+            .send()
+            .await
+            .map_err(CloudError::ReqwestError)?;
+
+        let data: ProvidersResponse =
+            response.json().await.map_err(|e| CloudError::RcloneError {
+                status: StatusCode::INTERNAL_SERVER_ERROR,
+                message: format!("Failed to parse providers: {}", e),
+            })?;
+
+        let provider = data
+            .providers
+            .into_iter()
+            .find(|p| p.name == provider_type)
+            .ok_or_else(|| CloudError::RcloneError {
+                status: StatusCode::NOT_FOUND,
+                message: format!("Provider '{}' not found", provider_type),
+            })?;
+
+        // Filter required and non-default options
+        let filtered_options: Vec<serde_json::Value> = provider
+            .options
+            .into_iter()
+            .filter(|opt| {
+                !["token", "config_is_local", "config_login_port"].contains(&opt.name.as_str())
+                    && opt.required
+            })
+            .map(|opt| {
+                json!({
+                    "Name": opt.name,
+                    "Help": opt.help
+                })
+            })
+            .collect();
+
+        Ok(filtered_options)
     }
 
     async fn create_config(

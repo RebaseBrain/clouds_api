@@ -15,6 +15,7 @@ pub mod setup_conf_dir;
 
 pub trait CloudApi {
     fn list_profiles(&self) -> impl Future<Output = String>;
+    fn get_provider_options(&self, provider_type: &str) -> impl Future<Output = String>;
     fn create_profile(
         &self,
         profile_name: &str,
@@ -43,6 +44,13 @@ pub struct Cloud {
 impl CloudApi for Cloud {
     async fn list_profiles(&self) -> String {
         match self.rclone.list_profiles().await {
+            Ok(res) => to_ok(StatusCode::OK, res),
+            Err(err) => err.into(),
+        }
+    }
+
+    async fn get_provider_options(&self, provider_type: &str) -> String {
+        match self.rclone.get_provider_options(provider_type).await {
             Ok(res) => to_ok(StatusCode::OK, res),
             Err(err) => err.into(),
         }
