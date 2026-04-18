@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 #[derive(Serialize)]
 pub struct ConfigCreateRequest {
@@ -17,4 +18,10 @@ pub struct RemoteConfig {
 
     #[serde(flatten)]
     pub extra: HashMap<String, serde_json::Value>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateParameters {
+    #[serde(flatten)]
+    pub extra: HashMap<String, Value>,
 }
