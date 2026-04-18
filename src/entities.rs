@@ -25,3 +25,19 @@ pub struct CreateParameters {
     #[serde(flatten)]
     pub extra: HashMap<String, Value>,
 }
+
+impl CreateParameters {
+    pub fn into_string_map(self) -> HashMap<String, String> {
+        self.extra
+            .into_iter()
+            .map(|(key, value)| {
+                let val = match value {
+                    Value::String(s) => s,
+                    _ => value.to_string(),
+                };
+
+                (key, val)
+            })
+            .collect()
+    }
+}
