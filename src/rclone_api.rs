@@ -315,16 +315,26 @@ impl RcloneApi for Rclone {
         );
 
         let body = json!({
-            "fs": format!("{}:", profile_name),
-            "mountPoint": mount_path_str,
-            "vfsOpt": {
-                "CacheMode": "full",
-                "CacheMaxAge": &cache_max_age,
-                "CacheMaxSize": &cache_max_size,
-                "CachePollInterval": "1s",
-                "ReadAhead": 0
-            }
-        });
+                "fs": format!("{}:", profile_name),
+                "mountPoint": mount_path_str,
+                "vfsOpt": {
+                    "CacheMode": "full",
+                    "CacheMaxAge": &cache_max_age,
+                    "CacheMaxSize": &cache_max_size,
+                    "CachePollInterval": "1s",
+                    "ReadAhead": 0,
+
+        // 2. Атрибуты (размер, время модификации).
+        // Ставим в 0, чтобы FUSE всегда спрашивал rclone, а не брал из кеша ядра
+        "AttrTimeout": "0s",
+        "PollInterval": "10s",
+        "DirCacheTime": "10s",
+
+        // 3. Важно для отображения новых файлов
+        "NoChecksum": false,
+        "NoModTime": false,
+                }
+            });
 
         println!("{body}");
 
