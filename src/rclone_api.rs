@@ -8,7 +8,7 @@ use std::io::prelude::*;
 use std::{
     collections::HashMap,
     fs::{self, File},
-    process::Output,
+    process::Command,
 };
 type Result<T> = std::result::Result<T, CloudError>;
 
@@ -32,6 +32,21 @@ pub trait RcloneApi {
 pub struct Rclone {
     pub client: Client,
     pub url: String,
+}
+
+impl Rclone {
+    fn cleanup_auth_port() {
+        if let Ok(output) = Command::new("lsof").args(["-t", "-i:53682"]).output() {
+            let pid_str = String::from_utf8_lossy(&output.stdout).trim().to_string();
+
+            if !pid_str.is_empty() {
+                for pid in pid_str.lines() {
+                    let _ = Command::new("kill").arg("-9").arg(pid).status();
+                    println!("DEBUG: Killed hanging auth process with PID {}", pid);
+                }
+            }
+        }
+    }
 }
 
 impl RcloneApi for Rclone {
@@ -59,38 +74,70 @@ impl RcloneApi for Rclone {
     }
 
     async fn create_config(&self, profile_name: &str, domain: &str) -> Result<String> {
-        let mut params = HashMap::new();
-        params.insert("config_login_timeout".to_string(), "120s".to_string());
-        params.insert("config_is_local".to_string(), "true".to_string());
+        Self::cleanup_auth_port();
 
-        let body = ConfigCreateRequest {
-            name: profile_name.to_string(),
-            r_type: domain.to_string(),
-            parameters: params,
-        };
+        if let Ok(profiles) = self.list_profiles().await
+            && profiles.iter().any(|(name, _)| name == profile_name)
+        {
+            println!(
+                "DEBUG: Found existing profile {}, deleting before recreation...",
+                profile_name
+            );
+            let _ = self.delete_profile(profile_name).await;
+        }
 
-        let response = self
-            .client
-            .post(format!("{}config/create", self.url))
-            .json(&body)
-            .send()
-            .await
-            .map_err(CloudError::ReqwestError)?;
+        // Spawn rclone as a separate child process for auth
+        // Replace "rclone.conf" with actual path if it's not default.
+        let mut child = Command::new("rclone")
+            .args([
+                "config",
+                "create",
+                profile_name,
+                domain,
+                "--config-is-local=true",
+                "--config-login-port=53682",
+                "--non-interactive",
+            ])
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .map_err(|e| CloudError::RcloneError {
+                status: StatusCode::INTERNAL_SERVER_ERROR,
+                message: format!("Failed to spawn rclone process: {}", e),
+            })?;
 
-        if response.status().is_success() {
-            Ok(format!("Success: Profile {} created", profile_name))
-        } else {
-            let err_body = response.text().await.unwrap_or_default();
-            if err_body.contains("address alrady in use") {
-                return Err(CloudError::RcloneError {
-                    status: StatusCode::CONFLICT,
-                    message: "Auth port already in use. Wait 2 minutes and try again.".into(),
-                });
+        let timeout_duration = std::time::Duration::from_secs(60);
+        let timeout = tokio::time::sleep(timeout_duration);
+
+        tokio::select! {
+            status = child.wait() => {
+                match status {
+                    Ok(s) if s.success() => {
+                        let _ = self.client
+                            .post(format!("{}config/reload", self.url))
+                            .send()
+                            .await;
+
+                        Ok(format!("Success: Profile {} created", profile_name))
+                    }
+                    _ => {
+                        let _ = self.delete_profile(profile_name).await;
+                        Err(CloudError::RcloneError {
+                            status: StatusCode::BAD_REQUEST,
+                            message: "Authentication failed or process was interrupted".into(),
+                        })
+                    }
+                }
             }
-            Err(CloudError::RcloneError {
-                status: StatusCode::CONFLICT,
-                message: "Failed to create profile".into(),
-            })
+            _ = timeout => {
+                let _ = child.kill().await;
+                let _ = self.delete_profile(profile_name).await;
+
+                Err(CloudError::RcloneError {
+                    status: StatusCode::GATEWAY_TIMEOUT,
+                    message: "Authentication timed out. Process terminated.".into(),
+                })
+            }
         }
     }
 
