@@ -59,10 +59,14 @@ impl RcloneApi for RcClone {
     }
 
     async fn create_config(&self, profile_name: &str, domain: &str) -> Result<String> {
+        let mut params = HashMap::new();
+        params.insert("config_login_timeout".to_string(), "120s".to_string());
+        params.insert("config_is_local".to_string(), "true".to_string());
+
         let body = ConfigCreateRequest {
             name: profile_name.to_string(),
             r_type: domain.to_string(),
-            parameters: HashMap::new(),
+            parameters: params,
         };
 
         let response = self
@@ -76,6 +80,13 @@ impl RcloneApi for RcClone {
         if response.status().is_success() {
             Ok(format!("Success: Profile {} created", profile_name))
         } else {
+            let err_body = response.text().await.unwrap_or_default();
+            if err_body.contains("address alrady in use") {
+                return Err(CloudError::RcloneError {
+                    status: StatusCode::CONFLICT,
+                    message: "Auth port already in use. Wait 2 minutes and try again.".into(),
+                });
+            }
             Err(CloudError::RcloneError {
                 status: StatusCode::CONFLICT,
                 message: "Failed to create profile".into(),
