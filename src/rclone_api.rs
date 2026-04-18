@@ -3,13 +3,7 @@ use reqwest::{Client, StatusCode};
 use serde_json::json;
 use std::fs;
 use std::path::Path;
-use std::{
-    collections::HashMap,
-    fs::{self, File},
-    future::Future,
-    io::prelude::*,
-    process::Stdio,
-};
+use std::{collections::HashMap, future::Future, process::Stdio};
 use tokio::process::Command;
 
 type Result<T> = std::result::Result<T, CloudError>;
