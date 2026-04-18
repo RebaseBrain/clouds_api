@@ -366,7 +366,6 @@ impl RcloneApi for Rclone {
                 "CachePollInterval": "1s",
                 "ReadAhead": 0,
 
-                "AttrTimeout": "0s",
                 "PollInterval": "10s",
                 "DirCacheTime": "10s",
 
