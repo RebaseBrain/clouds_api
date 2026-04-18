@@ -1,5 +1,4 @@
 use crate::{entities::*, error::CloudError, setup_conf_dir};
-use futures::future::join_all;
 use reqwest::{Client, StatusCode};
 use serde_json::json;
 use std::fs;
@@ -186,6 +185,11 @@ impl RcloneApi for Rclone {
         paths: Vec<String>,
     ) -> Result<HashMap<String, String>> {
         let mut results = HashMap::new();
+        let home = std::env::var("HOME").unwrap_or_default();
+
+        let meta_base_path = std::path::Path::new(&home)
+            .join(".cache/rclone/vfsMeta")
+            .join(profile_name);
 
         let core_stats_res = self
             .client
@@ -200,54 +204,20 @@ impl RcloneApi for Rclone {
             vec![]
         };
 
-        let vfs_requests = paths.iter().map(|path| {
-            let relative_path = path.trim_start_matches('/').to_string();
-            let url = format!("{}vfs/stats", self.url);
-            let client = self.client.clone();
-            let profile = profile_name.to_string();
+        for path in paths {
+            let relative_path = path.trim_start_matches('/');
 
-            async move {
-                let resp = client
-                    .post(url)
-                    .json(&json!({
-                        "fs": format!("{}:", profile),
-                        "item": relative_path,
-                    }))
-                    .send()
-                    .await;
-
-                match resp {
-                    Ok(r) => (relative_path, r.json::<VfsStatsResponse>().await.ok()),
-                    Err(_) => (relative_path, None),
-                }
-            }
-        });
-
-        let vfs_responses = join_all(vfs_requests).await;
-
-        for (rel_path, vfs_stats) in vfs_responses {
-            let original_path = paths
-                .iter()
-                .find(|p| p.trim_start_matches('/') == rel_path)
-                .unwrap();
-
-            if active_transfers.iter().any(|t| t.contains(&rel_path)) {
-                results.insert(original_path.clone(), "SYNCING".to_string());
+            if active_transfers.iter().any(|t| t.contains(relative_path)) {
+                results.insert(path.clone(), "SYNCING".to_string());
                 continue;
             }
 
-            match vfs_stats {
-                Some(stats) if stats.metadata.is_some() => {
-                    let metadata = stats.metadata.unwrap();
-                    if metadata.dirty {
-                        results.insert(original_path.clone(), "MODIFIED".to_string());
-                    } else {
-                        results.insert(original_path.clone(), "CACHED".to_string());
-                    }
-                }
-                _ => {
-                    results.insert(original_path.clone(), "NOT_CACHED".to_string());
-                }
+            let meta_file = meta_base_path.join(relative_path);
+
+            if meta_file.exists() {
+                results.insert(path.clone(), "CACHED".to_string());
+            } else {
+                results.insert(path.clone(), "NOT_CACHED".to_string());
             }
         }
 
