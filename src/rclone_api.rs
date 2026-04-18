@@ -1,5 +1,5 @@
 use crate::{
-    entities::{ConfigCreateRequest, RemoteConfig},
+    entities::{ConfigCreateRequest, CreateParameters, RemoteConfig},
     error::CloudError,
 };
 use reqwest::{Client, StatusCode};
@@ -8,7 +8,6 @@ use std::io::prelude::*;
 use std::{
     collections::HashMap,
     fs::{self, File},
-    process::Output,
 };
 type Result<T> = std::result::Result<T, CloudError>;
 
@@ -18,6 +17,7 @@ pub trait RcloneApi {
         &self,
         profile_name: &str,
         domain: &str,
+        parameters: &str,
     ) -> impl Future<Output = Result<String>>;
     fn delete_profile(&self, profile_name: &str) -> impl Future<Output = Result<String>>;
     fn mount(&self, profile_name: &str, file_path: &str) -> impl Future<Output = Result<String>>;
@@ -58,11 +58,17 @@ impl RcloneApi for RcClone {
             .collect())
     }
 
-    async fn create_config(&self, profile_name: &str, domain: &str) -> Result<String> {
+    async fn create_config(
+        &self,
+        profile_name: &str,
+        domain: &str,
+        parameters: &str,
+    ) -> Result<String> {
+        let params = serde_json::from_str::<CreateParameters>(parameters)?.into_string_map();
         let body = ConfigCreateRequest {
             name: profile_name.to_string(),
             r_type: domain.to_string(),
-            parameters: HashMap::new(),
+            parameters: params,
         };
 
         let response = self
@@ -106,9 +112,9 @@ impl RcloneApi for RcClone {
             "mountPoint": mount_path_str,
             "vfsOpt": {
                 "CacheMode": "full",
-               // "CacheMaxAge": "3600s",
+                "CacheMaxAge": "3600s",
                 "CacheMaxSize": "10G",
-               // "CachePollInterval": "1m"
+                "CachePollInterval": "1m"
             }
         });
 
@@ -121,7 +127,7 @@ impl RcloneApi for RcClone {
             .map_err(CloudError::ReqwestError)?;
 
         if response.status().is_success() {
-            fs::create_dir(&format!("{}/.pompiliuys", profile_name))?;
+            fs::create_dir(format!("{}/.pompiliuys", profile_name))?;
             let path = format!("{}/{}/.pompiliuys/config", profile_name, file_path);
             let mut file = File::create(&path)?;
             file.write_all(profile_name.as_bytes())?;
