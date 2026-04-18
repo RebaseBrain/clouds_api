@@ -1,5 +1,3 @@
-use std::process::Output;
-
 use reqwest::StatusCode;
 use zbus::interface;
 

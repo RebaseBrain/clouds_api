@@ -1,15 +1,15 @@
-use crate::{
-    entities::{ConfigCreateRequest, RemoteConfig},
-    error::CloudError,
-};
+use crate::{entities::RemoteConfig, error::CloudError};
 use reqwest::{Client, StatusCode};
 use serde_json::json;
-use std::io::prelude::*;
 use std::{
     collections::HashMap,
     fs::{self, File},
-    process::Command,
+    future::Future,
+    io::prelude::*,
+    process::Stdio,
 };
+use tokio::process::Command;
+
 type Result<T> = std::result::Result<T, CloudError>;
 
 pub trait RcloneApi {
@@ -32,6 +32,27 @@ pub trait RcloneApi {
 pub struct Rclone {
     pub client: Client,
     pub url: String,
+}
+
+impl Rclone {
+    fn cleanup_auth_port() {
+        if let Ok(output) = std::process::Command::new("lsof")
+            .args(["-t", "-i:53682"])
+            .output()
+        {
+            let pid_str = String::from_utf8_lossy(&output.stdout).trim().to_string();
+
+            if !pid_str.is_empty() {
+                for pid in pid_str.lines() {
+                    let _ = std::process::Command::new("kill")
+                        .arg("-9")
+                        .arg(pid)
+                        .status();
+                    println!("DEBUG: Killed hanging auth process with PID {}", pid);
+                }
+            }
+        }
+    }
 }
 
 impl RcloneApi for Rclone {
@@ -59,105 +80,84 @@ impl RcloneApi for Rclone {
     }
 
     async fn create_config(&self, profile_name: &str, domain: &str) -> Result<String> {
-        if let Ok(profiles) = self.list_profiles().await
-            && profiles.iter().any(|(name, _)| name == profile_name)
+        Self::cleanup_auth_port();
+
+        let current_profiles = self.list_profiles().await.unwrap_or_default();
+        println!(
+            "DEBUG: Current profiles known by daemon: {:?}",
+            current_profiles
+        );
+
+        if current_profiles
+            .iter()
+            .any(|(name, _)| name == profile_name)
         {
-            println!(
-                "DEBUG: Found existing profile {}, deleting before recreation...",
-                profile_name
-            );
+            println!("DEBUG: Deleting existing profile: {}", profile_name);
             let _ = self.delete_profile(profile_name).await;
         }
 
-        // Spawn rclone as a separate child process for auth
-        // Replace "rclone.conf" with actual path if it's not default.
         let mut child = Command::new("rclone")
             .args([
                 "config",
                 "create",
                 profile_name,
                 domain,
-                "--config-is-local=true",
-                "--config-login-port=53682",
+                "config_is_local",
+                "true",
+                "config_login_port",
+                "53682",
                 "--non-interactive",
+                "--quiet",
             ])
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::inherit())
             .spawn()
             .map_err(|e| CloudError::RcloneError {
                 status: StatusCode::INTERNAL_SERVER_ERROR,
-                message: format!("Failed to spawn rclone process: {}", e),
+                message: format!("Failed to spawn rclone: {}", e),
             })?;
 
-        let timeout_duration = std::time::Duration::from_secs(60);
-        let timeout = tokio::time::sleep(timeout_duration);
+        let timeout = tokio::time::sleep(std::time::Duration::from_secs(12));
+        tokio::pin!(timeout);
 
-        let response = self
-            .client
-            .post(format!("{}config/create?_async=true", self.url))
-            .json(&body)
-            .send()
-            .await
-            .map_err(CloudError::ReqwestError)?;
+        tokio::select! {
+            status = child.wait() => {
+                match status {
+                    Ok(s) if s.success() => {
+                        let _ = self.client
+                            .post(format!("{}config/reload", self.url))
+                            .send()
+                            .await;
 
-        let job_info: serde_json::Value =
-            response.json().await.map_err(|e| CloudError::RcloneError {
-                status: StatusCode::BAD_GATEWAY,
-                message: e.to_string(),
-            })?;
-        let job_id = job_info["jobid"]
-            .as_i64()
-            .ok_or_else(|| CloudError::RcloneError {
-                status: StatusCode::INTERNAL_SERVER_ERROR,
-                message: "No jobid returned".into(),
-            })?;
-
-        // Timeout
-        let start_time = std::time::Instant::now();
-        let timeout = std::time::Duration::from_secs(30);
-
-        while start_time.elapsed() < timeout {
-            let status_response = self
-                .client
-                .post(format!("{}job/status", self.url))
-                .json(&serde_json::json!({ "jobid": job_id }))
-                .send()
-                .await;
-
-            if let Ok(res) = status_response {
-                let status_data: serde_json::Value = res.json().await.unwrap_or_default();
-
-                if status_data["finished"].as_bool().unwrap_or(false) {
-                    if status_data["error"].is_null()
-                        || status_data["error"].as_str().unwrap_or("").is_empty()
-                    {
-                        return Ok(format!("Success: Profile {} created", profile_name));
-                    } else {
+                        Ok(format!("Profile '{}' created successfully", profile_name))
+                    }
+                    Ok(s) => {
+                        println!("DEBUG: Rclone exited with error: {}", s);
                         let _ = self.delete_profile(profile_name).await;
-                        return Err(CloudError::RcloneError {
+                        Err(CloudError::RcloneError {
                             status: StatusCode::BAD_REQUEST,
-                            message: "Auth failed".into(),
-                        });
+                            message: format!("Rclone failed with status: {}", s),
+                        })
+                    }
+                    Err(e) => {
+                        Err(CloudError::RcloneError {
+                            status: StatusCode::INTERNAL_SERVER_ERROR,
+                            message: format!("Wait error: {}", e),
+                        })
                     }
                 }
             }
-            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+            _ = &mut timeout => {
+                println!("DEBUG: Auth timeout reached for {}", profile_name);
+                let _ = child.kill().await;
+                let _ = self.delete_profile(profile_name).await;
+
+                Err(CloudError::RcloneError {
+                    status: StatusCode::GATEWAY_TIMEOUT,
+                    message: "Authentication timed out".into(),
+                })
+            }
         }
-
-        let _ = self
-            .client
-            .post(format!("{}job/stop", self.url))
-            .json(&serde_json::json!({ "jobid": job_id }))
-            .send()
-            .await;
-
-        // Remove invalid profile
-        let _ = self.delete_profile(profile_name).await;
-
-        Err(CloudError::RcloneError {
-            status: StatusCode::GATEWAY_TIMEOUT,
-            message: "Auth timeout, try again".into(),
-        })
     }
 
     async fn delete_profile(&self, profile_name: &str) -> Result<String> {
@@ -198,7 +198,7 @@ impl RcloneApi for Rclone {
             .map_err(CloudError::ReqwestError)?;
 
         if response.status().is_success() {
-            fs::create_dir(&format!("{}/.pompiliuys", profile_name))?;
+            fs::create_dir(format!("{}/.pompiliuys", profile_name))?;
             let path = format!("{}/{}/.pompiliuys/config", profile_name, file_path);
             let mut file = File::create(&path)?;
             file.write_all(profile_name.as_bytes())?;
