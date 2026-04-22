@@ -1,17 +1,19 @@
 use reqwest::StatusCode;
+use tokio::net::TcpStream;
 use zbus::interface;
 
 use crate::{
+    error::CloudError,
     json_result::to_ok,
     rclone_api::{Rclone, RcloneApi},
 };
 
+pub mod cache;
 pub mod entities;
 pub mod error;
 pub mod json_result;
 pub mod rclone_api;
 pub mod setup_conf_dir;
-pub mod cache;
 
 pub trait CloudApi {
     fn list_profiles(&self) -> impl Future<Output = String>;
@@ -49,6 +51,13 @@ pub trait CloudApi {
 
 pub struct Cloud {
     pub rclone: Rclone,
+}
+
+impl Cloud {
+    async fn check_internet_connection() -> Result<(), CloudError> {
+        let _ = TcpStream::connect("209.85.233.101:80").await?;
+        Ok(())
+    }
 }
 
 #[interface(name = "org.zbus.pompiliusd")]
